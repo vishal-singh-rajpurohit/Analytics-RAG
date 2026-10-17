@@ -1,0 +1,175 @@
+# Docker Compose configuration for PRODUCTION and TESTING
+# Self-contained, immutable images without host code mounting
+# Includes a dedicated testing profile for CI/CD test execution
+
+services:
+  backend:
+    build:
+      context: ./Server
+      dockerfile: Dockerfile
+    container_name: analytics_backend_prod
+    restart: always
+    ports:
+      - "8000:8000"
+    environment:
+      - ENVIRONMENT=production
+      - DEBUG=False
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-password}@db:5432/${POSTGRES_DB:-customer_care_db}
+      - REDIS_URL=redis://redis:6379
+      - LLM_PROVIDER=${LLM_PROVIDER:-huggingface}
+      - HUGGINGFACEHUB_API_TOKEN=${HUGGINGFACEHUB_API_TOKEN:-}
+      - HUGGINGFACE_REPO_ID=${HUGGINGFACE_REPO_ID:-meta-llama/Meta-Llama-3-8B-Instruct}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - OPENAI_MODEL_NAME=${OPENAI_MODEL_NAME:-gpt-4o-mini}
+      - ACCESS_TOKEN_SECRET=${ACCESS_TOKEN_SECRET:-supersecretkey123456789}
+      - REFRESH_TOKEN_SECRET=${REFRESH_TOKEN_SECRET:-superrefreshkey123456789}
+      - UPLOAD_DIR=/app/uploads
+      - CORS_ORIGINS=["http://localhost:3000","http://127.0.0.1:3000"]
+    # Production multi-worker ASGI server
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]
+    volumes:
+      # Persistent storage for uploaded datasets and generated chart images
+      - shared_uploads_prod:/app/uploads
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - analytics_prod_net
+    healthcheck:
+      test: ["CMD-SHELL", "python -c 'import urllib.request; urllib.request.urlopen(\"http://localhost:8000/\")' || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  frontend:
+    build:
+      context: ./client
+      dockerfile: Dockerfile
+      target: runner
+      args:
+        - NEXT_PUBLIC_API_URL=http://localhost:8000/api/v1
+        - NEXT_PUBLIC_API_URL_VERSION=v1
+    container_name: analytics_frontend_prod
+    restart: always
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - HOSTNAME=0.0.0.0
+      - NEXT_PUBLIC_API_URL=http://localhost:8000/api/v1
+      - NEXT_PUBLIC_API_URL_VERSION=v1
+      - BACKEND_INTERNAL_URL=http://backend:8000/api/v1
+      - NEXTAUTH_URL=http://localhost:3000
+      - NEXTAUTH_SECRET=${NEXTAUTH_SECRET:-supersecretnextauthkey123456789}
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:-}
+      - NODE_OPTIONS=--dns-result-order=ipv4first --no-network-family-autoselection
+    command: ["npm", "start"]
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - analytics_prod_net
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:3000/ || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 25s
+
+  db:
+    image: pgvector/pgvector:pg17
+    container_name: customer_care_db_prod
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-admin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-password}
+      POSTGRES_DB: ${POSTGRES_DB:-customer_care_db}
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata_prod:/var/lib/postgresql/data
+    networks:
+      - analytics_prod_net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  redis:
+    image: redis:alpine
+    container_name: analytics_redis_prod
+    restart: always
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata_prod:/data
+    networks:
+      - analytics_prod_net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # Dedicated Testing Service for CI/CD and Test Automation
+  # Run with: docker compose -f docker-compose.prod.yml --profile test run --rm tester
+  tester:
+    build:
+      context: ./Server
+      dockerfile: Dockerfile
+    container_name: analytics_tester
+    environment:
+      - ENVIRONMENT=testing
+      - DEBUG=True
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-password}@db:5432/${POSTGRES_DB:-customer_care_db}
+      - REDIS_URL=redis://redis:6379
+      - UPLOAD_DIR=/app/uploads
+    command: >
+      python -c "
+      import tests.test_cleaner as tc;
+      tc.test_cleaner_detects_missing_values_and_anomalies();
+      tc.test_cleaner_handles_clean_dataset();
+      print('PASS: Cleaner Tests');
+
+      import tests.test_sandbox as ts;
+      ts.test_sandbox_executes_safe_code();
+      ts.test_sandbox_blocks_dangerous_imports();
+      ts.test_sandbox_blocks_eval_and_exec();
+      ts.test_sandbox_captures_runtime_exceptions();
+      print('PASS: Sandbox Tests');
+
+      import tests.test_graph as tg;
+      tg.test_full_langgraph_pipeline_execution();
+      print('PASS: Full LangGraph Pipeline Tests');
+
+      import tests.test_single_csv_constraint as tsc;
+      tsc.test_single_csv_per_analysis_chat();
+      print('PASS: Single CSV Constraint Tests');
+      print('ALL TESTS PASSED SUCCESSFULLY');
+      "
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - analytics_prod_net
+    profiles:
+      - test
+
+volumes:
+  pgdata_prod:
+  redisdata_prod:
+  shared_uploads_prod:
+
+networks:
+  analytics_prod_net:
+    driver: bridge

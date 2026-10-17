@@ -14,3 +14,9 @@ env/
 ENV/
 
 .env
+
+# Uploaded user datasets and generated charts
+Server/app/uploads/raw/*
+!Server/app/uploads/raw/.gitkeep
+Server/app/uploads/charts/*
+!Server/app/uploads/charts/.gitkeep

@@ -7,6 +7,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.db import Base
 from .time import TimeStamp
+# from .analysis import Analysis
 
 
 class User(TimeStamp, Base):
@@ -24,6 +25,9 @@ class User(TimeStamp, Base):
 
     accounts: Mapped[List["Account"]] = relationship(
         "Account", back_populates="user", cascade="all, delete-orphan"
+    )
+    analyses: Mapped[List["Analysis"]] = relationship(
+        "Analysis", back_populates="user", cascade="all, delete-orphan"
     )
 
 

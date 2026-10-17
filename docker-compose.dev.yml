@@ -1,27 +1,156 @@
+# Docker Compose configuration for LOCAL DEVELOPMENT
+# Supports hot-reloading for both FastAPI (backend) and Next.js (frontend)
+
 services:
+  backend:
+    build:
+      context: ./Server
+      dockerfile: Dockerfile
+    container_name: analytics_backend_dev
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - ENVIRONMENT=development
+      - DEBUG=True
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-password}@db:5432/${POSTGRES_DB:-customer_care_db}
+      - REDIS_URL=redis://redis:6379
+      - LLM_PROVIDER=${LLM_PROVIDER:-huggingface}
+      - HUGGINGFACEHUB_API_TOKEN=${HUGGINGFACEHUB_API_TOKEN:-}
+      - HUGGINGFACE_REPO_ID=${HUGGINGFACE_REPO_ID:-meta-llama/Meta-Llama-3-8B-Instruct}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - OPENAI_MODEL_NAME=${OPENAI_MODEL_NAME:-gpt-4o-mini}
+      - ACCESS_TOKEN_SECRET=${ACCESS_TOKEN_SECRET:-supersecretkey123456789}
+      - REFRESH_TOKEN_SECRET=${REFRESH_TOKEN_SECRET:-superrefreshkey123456789}
+      - UPLOAD_DIR=/app/uploads
+      - CORS_ORIGINS=["http://localhost:3000","http://127.0.0.1:3000"]
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+    volumes:
+      # Live code mounting for Python hot-reloading
+      - ./Server/app:/app/app
+      - ./Server/tests:/app/tests
+      # Shared persistent uploads
+      - shared_uploads_dev:/app/uploads
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - analytics_dev_net
+    healthcheck:
+      test: ["CMD-SHELL", "python -c 'import urllib.request; urllib.request.urlopen(\"http://localhost:8000/\")' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  frontend:
+    build:
+      context: ./client
+      dockerfile: Dockerfile.dev
+      target: development
+    container_name: analytics_frontend_dev
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=development
+      - PORT=3000
+      - HOSTNAME=0.0.0.0
+      - NEXT_PUBLIC_API_URL=http://localhost:8000/api/v1
+      - NEXT_PUBLIC_API_URL_VERSION=v1
+      - BACKEND_INTERNAL_URL=http://backend:8000/api/v1
+      - NEXTAUTH_URL=http://localhost:3000
+      - NEXTAUTH_SECRET=${NEXTAUTH_SECRET:-supersecretnextauthkey123456789}
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:-}
+      - NODE_OPTIONS=--dns-result-order=ipv4first --no-network-family-autoselection
+      # Enable polling for reliable hot-reloading in Docker on Windows/macOS/Linux
+      - WATCHPACK_POLLING=true
+    command: ["npm", "run", "dev"]
+    volumes:
+      # Live code mounting for Next.js hot module replacement (HMR)
+      - ./client/src:/app/src
+      - ./client/public:/app/public
+      # Prevent host OS node_modules / .next cache collision with container
+      - client_node_modules_dev:/app/node_modules
+      - client_next_dev:/app/.next
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - analytics_dev_net
+
   db:
     image: pgvector/pgvector:pg17
-    container_name: customer-care-db
+    container_name: customer_care_db_dev
     restart: unless-stopped
     environment:
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER:-admin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-password}
+      POSTGRES_DB: ${POSTGRES_DB:-customer_care_db}
     ports:
       - "5433:5432"
     volumes:
-      - pgdata:/var/lib/postgresql/data
-      - ./server/app/db/create_tables.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
-
+      - pgdata_dev:/var/lib/postgresql/data
+    networks:
+      - analytics_dev_net
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
       interval: 5s
       timeout: 5s
       retries: 10
       start_period: 10s
-  
+
+  redis:
+    image: redis:alpine
+    container_name: analytics_redis_dev
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
+    volumes:
+      - redisdata_dev:/data
+    networks:
+      - analytics_dev_net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # Optional background worker for asynchronous job execution (Taskiq)
+  worker:
+    build:
+      context: ./Server
+      dockerfile: Dockerfile
+    container_name: analytics_worker_dev
+    restart: unless-stopped
+    command: ["taskiq", "worker", "app.workers.taskiq:broker"]
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-password}@db:5432/${POSTGRES_DB:-customer_care_db}
+      - REDIS_URL=redis://redis:6379
+      - UPLOAD_DIR=/app/uploads
+    volumes:
+      - ./Server/app:/app/app
+      - shared_uploads_dev:/app/uploads
+    depends_on:
+      redis:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+    networks:
+      - analytics_dev_net
+    profiles:
+      - worker  # Start with: docker compose -f docker-compose.dev.yml --profile worker up
+
 volumes:
-  pgdata:
-  redisdata:
-  client_node_modules:
-  client_next:
+  pgdata_dev:
+  redisdata_dev:
+  shared_uploads_dev:
+  client_node_modules_dev:
+  client_next_dev:
+
+networks:
+  analytics_dev_net:
+    driver: bridge
