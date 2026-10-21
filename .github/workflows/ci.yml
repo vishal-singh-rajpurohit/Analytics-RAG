@@ -1,0 +1,211 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: ["main", "master"]
+  pull_request:
+    branches: ["main", "master"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  # =========================================================================
+  # 1. Backend Testing & Quality Assurance
+  # =========================================================================
+  backend-tests:
+    name: Backend Pytest & Service Tests
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_USER: admin
+          POSTGRES_PASSWORD: password
+          POSTGRES_DB: customer_care_db
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U admin -d customer_care_db"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+      redis:
+        image: redis:alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 5
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: "Server/requirements.txt"
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libpq-dev gcc
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r Server/requirements.txt
+
+      - name: Create test upload directories
+        run: |
+          mkdir -p Server/uploads/raw Server/uploads/charts
+
+      - name: Run Backend Pytest Suite
+        env:
+          DATABASE_URL: postgresql+asyncpg://admin:password@localhost:5432/customer_care_db
+          REDIS_URL: redis://localhost:6379
+          ENVIRONMENT: testing
+          DEBUG: "True"
+          ACCESS_TOKEN_SECRET: testsecretkey1234567890abcdefghijklmnopqrstuvwxyz
+          REFRESH_TOKEN_SECRET: testrefreshkey1234567890abcdefghijklmnopqrstuvwxyz
+          UPLOAD_DIR: Server/uploads
+          LLM_PROVIDER: huggingface
+          OPENAI_API_KEY: sk-test-dummy-key-for-ci
+          HUGGINGFACEHUB_API_TOKEN: hf_dummy_token_for_ci
+        run: |
+          python -m pytest Server/tests/ -v --tb=short
+
+  # =========================================================================
+  # 2. Frontend Type-Check & Production Build
+  # =========================================================================
+  frontend-checks:
+    name: Frontend TypeScript & Build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: "client/package-lock.json"
+
+      - name: Install client dependencies
+        working-directory: ./client
+        run: npm ci
+
+      - name: Validate TypeScript Types
+        working-directory: ./client
+        run: npx tsc --noEmit
+
+      - name: Verify Production Next.js Build
+        working-directory: ./client
+        env:
+          NODE_ENV: production
+          NEXT_PUBLIC_API_URL: http://localhost:8000/api/v1
+          NEXT_PUBLIC_API_URL_VERSION: v1
+          NEXTAUTH_URL: http://localhost:3000
+          NEXTAUTH_SECRET: ci_dummy_nextauth_secret_123456789
+        run: npm run build
+
+  # =========================================================================
+  # 3. Docker Compose Validation & Image Build Test
+  # =========================================================================
+  docker-compose-validate:
+    name: Docker Compose Validation & Build
+    needs: [backend-tests, frontend-checks]
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Validate Docker Compose Configurations
+        run: |
+          docker compose -f docker-compose.yml config > /dev/null
+          echo "docker-compose.yml is valid"
+          docker compose -f docker-compose.prod.yml config > /dev/null
+          echo "docker-compose.prod.yml is valid"
+
+      - name: Build Docker Compose Images
+        env:
+          NEXT_PUBLIC_API_URL: http://localhost:8000/api/v1
+          NEXT_PUBLIC_API_URL_VERSION: v1
+        run: |
+          docker compose -f docker-compose.prod.yml build
+
+  # =========================================================================
+  # 4. Continuous Deployment to AWS Ubuntu (Runs only on main push)
+  # =========================================================================
+  deploy-to-aws:
+    name: Deploy to AWS Ubuntu EC2
+    needs: [docker-compose-validate]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    steps:
+      - name: Check for AWS Deployment Credentials
+        id: check-secrets
+        run: |
+          if [ -n "${{ secrets.EC2_HOST }}" ] && [ -n "${{ secrets.EC2_SSH_KEY }}" ]; then
+            echo "configured=true" >> $GITHUB_OUTPUT
+            echo "AWS EC2 deployment secrets detected. Proceeding with deployment."
+          else
+            echo "configured=false" >> $GITHUB_OUTPUT
+            echo "AWS deployment secrets (EC2_HOST, EC2_SSH_KEY) not found. Skipping auto-deploy step."
+          fi
+
+      - name: Deploy via SSH to AWS EC2
+        if: steps.check-secrets.outputs.configured == 'true'
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER || 'ubuntu' }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          port: ${{ secrets.EC2_PORT || 22 }}
+          script_stop: true
+          script: |
+            set -e
+            APP_DIR="/home/ubuntu/analytics-dashboard"
+            
+            # 1. Create or navigate to project directory
+            if [ ! -d "$APP_DIR/.git" ]; then
+              echo "Cloning repository..."
+              git clone https://github.com/${{ github.repository }}.git "$APP_DIR"
+            fi
+            cd "$APP_DIR"
+
+            # 2. Fetch and checkout latest code from main
+            echo "Pulling latest changes from main..."
+            git fetch origin main
+            git reset --hard origin/main
+
+            # 3. Ensure production .env exists
+            if [ ! -f .env ]; then
+              echo "Creating initial .env from template..."
+              cp .env.example .env
+            fi
+
+            # 4. Build and restart containers using Docker Compose
+            echo "Building and restarting Docker containers..."
+            docker compose -f docker-compose.prod.yml up -d --build --remove-orphans
+
+            # 5. Clean up old unused images
+            echo "Cleaning dangling Docker images..."
+            docker image prune -f
+            
+            echo "Deployment completed successfully!"

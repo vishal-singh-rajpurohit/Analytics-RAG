@@ -1,6 +1,6 @@
 # Docker Compose configuration for PRODUCTION and TESTING
 # Self-contained, immutable images without host code mounting
-# Includes a dedicated testing profile for CI/CD test execution
+# Includes automated Nginx reverse proxy, Certbot SSL automation, and testing profile
 
 services:
   backend:
@@ -10,7 +10,7 @@ services:
     container_name: analytics_backend_prod
     restart: always
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     environment:
       - ENVIRONMENT=production
       - DEBUG=False
@@ -24,7 +24,7 @@ services:
       - ACCESS_TOKEN_SECRET=${ACCESS_TOKEN_SECRET:-supersecretkey123456789}
       - REFRESH_TOKEN_SECRET=${REFRESH_TOKEN_SECRET:-superrefreshkey123456789}
       - UPLOAD_DIR=/app/uploads
-      - CORS_ORIGINS=["http://localhost:3000","http://127.0.0.1:3000"]
+      - CORS_ORIGINS=${CORS_ORIGINS:-["http://localhost:3000","http://127.0.0.1:3000","http://localhost"]}
     # Production multi-worker ASGI server
     command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]
     volumes:
@@ -50,20 +50,20 @@ services:
       dockerfile: Dockerfile
       target: runner
       args:
-        - NEXT_PUBLIC_API_URL=http://localhost:8000/api/v1
+        - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:8000/api/v1}
         - NEXT_PUBLIC_API_URL_VERSION=v1
     container_name: analytics_frontend_prod
     restart: always
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
     environment:
       - NODE_ENV=production
       - PORT=3000
       - HOSTNAME=0.0.0.0
-      - NEXT_PUBLIC_API_URL=http://localhost:8000/api/v1
+      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:8000/api/v1}
       - NEXT_PUBLIC_API_URL_VERSION=v1
       - BACKEND_INTERNAL_URL=http://backend:8000/api/v1
-      - NEXTAUTH_URL=http://localhost:3000
+      - NEXTAUTH_URL=${NEXTAUTH_URL:-http://localhost:3000}
       - NEXTAUTH_SECRET=${NEXTAUTH_SECRET:-supersecretnextauthkey123456789}
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
       - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:-}
@@ -90,7 +90,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-password}
       POSTGRES_DB: ${POSTGRES_DB:-customer_care_db}
     ports:
-      - "5433:5432"
+      - "127.0.0.1:5433:5432"
     volumes:
       - pgdata_prod:/var/lib/postgresql/data
     networks:
@@ -108,7 +108,7 @@ services:
     restart: always
     command: ["redis-server", "--appendonly", "yes"]
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     volumes:
       - redisdata_prod:/data
     networks:
@@ -118,6 +118,38 @@ services:
       interval: 5s
       timeout: 3s
       retries: 5
+
+  # Reverse Proxy & SSL Termination
+  nginx:
+    image: nginx:alpine
+    container_name: analytics_nginx_prod
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./certbot/conf:/etc/letsencrypt:ro
+      - ./certbot/www:/var/www/certbot:ro
+    depends_on:
+      frontend:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+    networks:
+      - analytics_prod_net
+
+  # Automated Let's Encrypt SSL Certificate Manager
+  certbot:
+    image: certbot/certbot:latest
+    container_name: analytics_certbot_prod
+    restart: unless-stopped
+    volumes:
+      - ./certbot/conf:/etc/letsencrypt
+      - ./certbot/www:/var/www/certbot
+    entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done;'"
+    networks:
+      - analytics_prod_net
 
   # Dedicated Testing Service for CI/CD and Test Automation
   # Run with: docker compose -f docker-compose.prod.yml --profile test run --rm tester
