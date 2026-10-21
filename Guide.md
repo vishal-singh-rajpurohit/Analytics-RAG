@@ -173,7 +173,7 @@ In the **Network settings**, configure the Security Group with the following inb
 | **HTTPS** | TCP | `443` | `0.0.0.0/0` | Secure encrypted web traffic |
 
 > [!IMPORTANT]
-> Do **NOT** expose ports `5432`, `5433`, or `6379` to `0.0.0.0/0`. In `docker-compose.prod.yml`, database ports are securely bound to `127.0.0.1` only.
+> Do **NOT** expose ports `5432`, `5431`, or `6379` to `0.0.0.0/0`. In `docker-compose.prod.yml`, database ports are securely bound to `127.0.0.1` only.
 
 ### Step 5.3: Allocate an Elastic IP
 1. In the EC2 left sidebar, go to **Network & Security** → **Elastic IPs**.
@@ -563,9 +563,9 @@ POSTGRES_PASSWORD=your_super_secure_postgres_password_here
 POSTGRES_DB=analytics_prod_db
 
 # AI / LLM Configuration
-LLM_PROVIDER=huggingface
-HUGGINGFACEHUB_API_TOKEN=hf_your_token_here
-HUGGINGFACE_REPO_ID=meta-llama/Meta-Llama-3-8B-Instruct
+LLM_PROVIDER=google
+GOOGLE_API_KEY=your_google_gemini_api_key_here
+GEMINI_MODEL=gemini-1.5-flash
 OPENAI_API_KEY=
 OPENAI_MODEL_NAME=gpt-4o-mini
 
@@ -603,7 +603,7 @@ NAME                          IMAGE                         STATUS              
 analytics_backend_prod        analyticsdashboard-backend    Up 2 minutes (healthy)    127.0.0.1:8000->8000/tcp
 analytics_frontend_prod       analyticsdashboard-frontend   Up 2 minutes (healthy)    127.0.0.1:3000->3000/tcp
 analytics_redis_prod          redis:alpine                  Up 2 minutes (healthy)    127.0.0.1:6379->6379/tcp
-customer_care_db_prod         pgvector/pgvector:pg17        Up 2 minutes (healthy)    127.0.0.1:5433->5432/tcp
+customer_care_db_prod         pgvector/pgvector:pg17        Up 2 minutes (healthy)    127.0.0.1:5431->5432/tcp
 analytics_nginx_prod          nginx:alpine                  Up 2 minutes              0.0.0.0:80->80/tcp, 0.0.0.0:443->443/tcp
 analytics_certbot_prod        certbot/certbot:latest        Up 2 minutes
 ```

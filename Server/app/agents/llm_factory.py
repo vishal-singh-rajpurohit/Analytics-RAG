@@ -5,57 +5,55 @@ from app.config.config import settings
 def get_chat_model() -> Optional[Any]:
     """
     Returns an initialized LangChain Chat model based on configuration.
-    Prioritizes ChatHuggingFace when configured or requested, with OpenAI fallback.
+    Prioritizes ChatGoogleGenerativeAI (Google Gemini) when configured or available,
+    with OpenAI fallback.
     Returns None if no API keys are provided to use smart offline heuristics.
     """
-    hf_token = settings.HUGGINGFACEHUB_API_TOKEN or os.getenv("HUGGINGFACEHUB_API_TOKEN") or os.getenv("HF_TOKEN")
-    openai_key = settings.OPENAI_API_KEY or os.getenv("OPENAI_API_KEY")
-    provider = (settings.LLM_PROVIDER or "huggingface").lower()
+    google_key = (
+        getattr(settings, "GOOGLE_API_KEY", None)
+        or getattr(settings, "GEMINI_API_KEY", None)
+        or os.getenv("GOOGLE_API_KEY")
+        or os.getenv("GEMINI_API_KEY")
+    )
+    openai_key = getattr(settings, "OPENAI_API_KEY", None) or os.getenv("OPENAI_API_KEY")
+    provider = (getattr(settings, "LLM_PROVIDER", None) or "google").lower()
+    gemini_model = getattr(settings, "GEMINI_MODEL", None) or os.getenv("GEMINI_MODEL") or "gemini-1.5-flash"
 
-    # Priority 1: ChatHuggingFace
-    if provider == "huggingface" and hf_token:
+    # Priority 1: Google Gemini (ChatGoogleGenerativeAI via langchain-google-genai)
+    if provider in ("google", "gemini", "langchain-google-genai") and google_key:
         try:
-            from langchain_huggingface import ChatHuggingFace, HuggingFaceEndpoint
-            endpoint = HuggingFaceEndpoint(
-                repo_id=settings.HUGGINGFACE_REPO_ID or "meta-llama/Meta-Llama-3-8B-Instruct",
-                task="text-generation",
-                max_new_tokens=512,
-                do_sample=False,
-                temperature=0.1,
-                huggingfacehub_api_token=hf_token
+            from langchain_google_genai import ChatGoogleGenerativeAI
+            return ChatGoogleGenerativeAI(
+                model=gemini_model,
+                google_api_key=google_key,
+                temperature=0.1
             )
-            chat_model = ChatHuggingFace(llm=endpoint)
-            return chat_model
         except Exception as e:
-            print(f"[LLM-FACTORY] Warning: Failed to initialize ChatHuggingFace ({e}). Falling back.")
+            print(f"[LLM-FACTORY] Warning: Failed to initialize ChatGoogleGenerativeAI ({e}). Falling back.")
 
     # Priority 2: OpenAI
-    if openai_key:
+    if openai_key and (provider == "openai" or not google_key):
         try:
             from langchain_openai import ChatOpenAI
             return ChatOpenAI(
-                model=settings.OPENAI_MODEL_NAME or "gpt-4o-mini",
+                model=getattr(settings, "OPENAI_MODEL_NAME", None) or "gpt-4o-mini",
                 api_key=openai_key,
                 temperature=0.1
             )
         except Exception as e:
             print(f"[LLM-FACTORY] Warning: Failed to initialize ChatOpenAI ({e}).")
 
-    # If ChatHuggingFace token is available even if provider wasn't explicitly 'huggingface'
-    if hf_token:
+    # Priority 3: Fallback to Google Gemini if google_key is present even if provider wasn't explicitly 'google'
+    if google_key:
         try:
-            from langchain_huggingface import ChatHuggingFace, HuggingFaceEndpoint
-            endpoint = HuggingFaceEndpoint(
-                repo_id=settings.HUGGINGFACE_REPO_ID or "meta-llama/Meta-Llama-3-8B-Instruct",
-                task="text-generation",
-                max_new_tokens=512,
-                do_sample=False,
-                temperature=0.1,
-                huggingfacehub_api_token=hf_token
+            from langchain_google_genai import ChatGoogleGenerativeAI
+            return ChatGoogleGenerativeAI(
+                model=gemini_model,
+                google_api_key=google_key,
+                temperature=0.1
             )
-            return ChatHuggingFace(llm=endpoint)
         except Exception as e:
-            print(f"[LLM-FACTORY] Warning: Failed to fallback to ChatHuggingFace ({e}).")
+            print(f"[LLM-FACTORY] Warning: Failed to fallback to ChatGoogleGenerativeAI ({e}).")
 
     # Offline / Heuristic execution
     return None

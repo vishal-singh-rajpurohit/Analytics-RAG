@@ -77,9 +77,10 @@ jobs:
           ACCESS_TOKEN_SECRET: testsecretkey1234567890abcdefghijklmnopqrstuvwxyz
           REFRESH_TOKEN_SECRET: testrefreshkey1234567890abcdefghijklmnopqrstuvwxyz
           UPLOAD_DIR: Server/uploads
-          LLM_PROVIDER: huggingface
+          LLM_PROVIDER: google
+          GOOGLE_API_KEY: dummy_google_api_key_for_ci
+          GEMINI_MODEL: gemini-1.5-flash
           OPENAI_API_KEY: sk-test-dummy-key-for-ci
-          HUGGINGFACEHUB_API_TOKEN: hf_dummy_token_for_ci
         run: |
           python -m pytest Server/tests/ -v --tb=short
 

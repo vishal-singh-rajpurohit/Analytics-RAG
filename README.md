@@ -17,6 +17,7 @@
   <img src="https://img.shields.io/badge/Python-3.12-3776AB?style=flat-square&logo=python&logoColor=white" alt="Python 3.12" />
   <img src="https://img.shields.io/badge/FastAPI-0.115+-009688?style=flat-square&logo=fastapi&logoColor=white" alt="FastAPI" />
   <img src="https://img.shields.io/badge/LangGraph-StateGraph-FF9900?style=flat-square&logo=langchain&logoColor=white" alt="LangGraph" />
+  <img src="https://img.shields.io/badge/Google%20Gemini-1.5%20Flash-4285F4?style=flat-square&logo=google&logoColor=white" alt="Google Gemini" />
   <img src="https://img.shields.io/badge/Next.js-16%20(App%20Router)-000000?style=flat-square&logo=nextdotjs&logoColor=white" alt="Next.js 16" />
   <img src="https://img.shields.io/badge/React-19-61DAFB?style=flat-square&logo=react&logoColor=black" alt="React 19" />
   <img src="https://img.shields.io/badge/TypeScript-5.x%20Strict-3178C6?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript" />
@@ -246,7 +247,7 @@ $$\text{Health Score} = 100 - \left( w_1 \times \frac{\text{Missing Cells}}{\tex
 * **Web Framework**: [FastAPI 0.115+](https://fastapi.tiangolo.com/) (Asynchronous ASGI)
 * **Application Server**: Uvicorn (Multi-worker production configuration)
 * **Runtime**: Python 3.12 (Strongly typed, Pydantic v2 settings)
-* **Agentic Framework**: [LangChain](https://www.langchain.com/) & [LangGraph](https://langchain-ai.github.io/langgraph/) (StateGraph)
+* **Agentic Framework**: [LangChain](https://www.langchain.com/), [LangGraph](https://langchain-ai.github.io/langgraph/) (StateGraph) & [Google Gemini](https://ai.google.dev/) (`langchain-google-genai`)
 * **Data Processing**: Pandas, NumPy
 * **Data Visualization**: Matplotlib (Agg headless engine), Seaborn
 

@@ -16,9 +16,9 @@ services:
       - DEBUG=False
       - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-password}@db:5432/${POSTGRES_DB:-customer_care_db}
       - REDIS_URL=redis://redis:6379
-      - LLM_PROVIDER=${LLM_PROVIDER:-huggingface}
-      - HUGGINGFACEHUB_API_TOKEN=${HUGGINGFACEHUB_API_TOKEN:-}
-      - HUGGINGFACE_REPO_ID=${HUGGINGFACE_REPO_ID:-meta-llama/Meta-Llama-3-8B-Instruct}
+      - LLM_PROVIDER=${LLM_PROVIDER:-google}
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY:-}
+      - GEMINI_MODEL=${GEMINI_MODEL:-gemini-1.5-flash}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - OPENAI_MODEL_NAME=${OPENAI_MODEL_NAME:-gpt-4o-mini}
       - ACCESS_TOKEN_SECRET=${ACCESS_TOKEN_SECRET:-supersecretkey123456789}
@@ -88,7 +88,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-password}
       POSTGRES_DB: ${POSTGRES_DB:-customer_care_db}
     ports:
-      - "127.0.0.1:5433:5432"
+      - "127.0.0.1:${POSTGRES_PORT:-5431}:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     networks:

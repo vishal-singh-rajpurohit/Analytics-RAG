@@ -55,7 +55,7 @@ export default function SyntropicAnalyticsPage() {
 
   const [activeDataset, setActiveDataset] = useState<string>("");
   const [analysisId, setAnalysisId] = useState<string>("");
-  const [activeModel, setActiveModel] = useState<string>("ChatHuggingFace (Llama-3-8B)");
+  const [activeModel, setActiveModel] = useState<string>("Google Gemini (1.5 Flash)");
   const [activeTab, setActiveTab] = useState<DashboardTab>("overview");
   const [isUploadOpen, setIsUploadOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);

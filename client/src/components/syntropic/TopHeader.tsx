@@ -50,11 +50,11 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
 
   // const models = [
   //   {
-  //     id: "ChatHuggingFace (Llama-3-8B)",
-  //     title: "ChatHuggingFace (Llama-3-8B)",
-  //     subtitle: "meta-llama/Meta-Llama-3-8B-Instruct",
-  //     tag: "FREE",
-  //     tagColor: "bg-amber-100 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300"
+  //     id: "Google Gemini (1.5 Flash)",
+  //     title: "Google Gemini (1.5 Flash)",
+  //     subtitle: "langchain-google-genai (gemini-1.5-flash)",
+  //     tag: "FAST",
+  //     tagColor: "bg-blue-100 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300"
   //   },
   //   {
   //     id: "Syntropic-4o Analytics (GPT-4o)",
