@@ -61,8 +61,7 @@ app.mount(
 app.include_router(auth.router, prefix=f'{settings.API_V1_STR}/auth', tags=["Authentication"])
 app.include_router(analysis.router, prefix=f'{settings.API_V1_STR}/analysis', tags=["Analysis"])
 
-# Alias routes without version prefix for backward compatibility
-app.include_router(auth.router, prefix="/api/auth", include_in_schema=False)
+# Alias routes without version prefix for backward compatibility (analysis only; auth is reserved for NextAuth)
 app.include_router(analysis.router, prefix="/api/analysis", include_in_schema=False)
 
 
