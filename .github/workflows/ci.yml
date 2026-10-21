@@ -181,7 +181,13 @@ jobs:
           script_stop: true
           script: |
             set -e
-            APP_DIR="/home/ubuntu/analytics-dashboard"
+            if [ -d "/home/ubuntu/Analytics-RAG/.git" ]; then
+              APP_DIR="/home/ubuntu/Analytics-RAG"
+            elif [ -d "/home/ubuntu/analytics-dashboard/.git" ]; then
+              APP_DIR="/home/ubuntu/analytics-dashboard"
+            else
+              APP_DIR="/home/ubuntu/Analytics-RAG"
+            fi
             
             # 1. Create or navigate to project directory
             if [ ! -d "$APP_DIR/.git" ]; then
