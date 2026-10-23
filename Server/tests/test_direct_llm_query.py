@@ -203,3 +203,90 @@ async def test_api_query_endpoint_general_session():
     assert resp.tool_required is False
     assert resp.tool_used == []
     assert "retention" in resp.summary.lower()
+
+
+def test_router_advisory_chart_queries_classified_as_direct():
+    """Verify that chart suitability/advisory questions are classified as direct without triggering tools."""
+    schema = {
+        "columns": [
+            {"name": "ORDERNUMBER", "type": "int"},
+            {"name": "QUANTITYORDERED", "type": "int"},
+            {"name": "PRICEEACH", "type": "float"},
+            {"name": "STATUS", "type": "string"},
+            {"name": "PRODUCTLINE", "type": "string"}
+        ]
+    }
+
+    test_queries = [
+        "is pie chart will be a good mode to show the data",
+        "should I use a pie chart or a bar chart?",
+        "which chart would be the best way to visualize sales?",
+        "would a histogram be a good mode to show quantity ordered?",
+        "is a bar chart better than a pie chart for categories?"
+    ]
+
+    for q in test_queries:
+        state = {
+            "user_query": q,
+            "dataset_path": "dummy.csv",
+            "dataset_schema": schema
+        }
+        updated = router_node(state)
+        assert updated["intent"] == "direct", f"Failed for query: {q}"
+        assert updated["tool_required"] is False, f"tool_required should be False for: {q}"
+        assert updated["tool_used"] == [], f"tool_used should be empty for: {q}"
+
+
+def test_pie_chart_advisory_response_quality():
+    """Test full pipeline execution for pie chart advisory query returns direct clean guidance with no charts."""
+    with tempfile.NamedTemporaryFile(suffix=".csv", delete=False, mode="w", encoding="utf-8") as f:
+        f.write("ORDERNUMBER,QUANTITYORDERED,PRICEEACH,STATUS\n")
+        f.write("10107,30,95.7,Shipped\n")
+        f.write("10121,34,81.35,Shipped\n")
+        f.write("10134,41,94.74,In Process\n")
+        temp_path = f.name
+
+    try:
+        report = scan_dataset(temp_path)
+        initial_state = {
+            "analysis_id": "test_pie_advisory_session",
+            "dataset_path": temp_path,
+            "cleaned_file_path": None,
+            "dataset_schema": {
+                "columns": report["columns"],
+                "total_rows": report["total_rows"],
+                "total_columns": report["total_columns"],
+                "sample_preview": []
+            },
+            "user_query": "is pie chart will be a good mode to show the data",
+            "chat_history": [],
+            "intent": None,
+            "tool_required": True,
+            "tool_used": [],
+            "analysis_code": None,
+            "code_execution_result": None,
+            "execution_error": None,
+            "retry_count": 0,
+            "visualization_code": None,
+            "chart_paths": [],
+            "chart_description": None,
+            "agent_steps": [],
+            "final_response": {}
+        }
+
+        final_state = compiled_analysis_graph.invoke(initial_state)
+        assert final_state is not None
+        resp = final_state["final_response"]
+        assert resp["is_direct_answer"] is True
+        assert resp["tool_required"] is False
+        assert resp["tool_used"] == []
+        assert len(resp["chart_urls"]) == 0, "No visualizer charts should be created for advisory inquiries"
+        
+        summary = resp["summary"].lower()
+        # Ensure clean advisory answer is delivered
+        assert "pie" in summary
+        assert "bar chart" in summary or "alternative" in summary
+    finally:
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
+

@@ -31,6 +31,51 @@ def generate_direct_fallback_response(query: str, schema: Dict[str, Any]) -> str
             "How can I assist you today?"
         )
 
+    # Pie chart and chart advisory inquiries
+    if any(k in q_lower for k in ["pie chart", "pie-chart", "pie_chart"]) or (
+        any(k in q_lower for k in ["chart", "plot", "visualize", "visualization"])
+        and any(k in q_lower for k in ["good", "better", "best", "recommend", "should i", "mode", "way", "choice", "option", "suit"])
+    ):
+        cols = [c.get("name") for c in schema.get("columns", []) if isinstance(c, dict)] if schema else []
+        cat_cols = [c.get("name") for c in schema.get("columns", []) if isinstance(c, dict) and any(t in str(c.get("type", "")).lower() for t in ["str", "obj", "cat", "text"])] if schema else []
+        num_cols = [c.get("name") for c in schema.get("columns", []) if isinstance(c, dict) and any(t in str(c.get("type", "")).lower() for t in ["int", "float", "num"])] if schema else []
+
+        col_context = ""
+        if cols:
+            cat_sample = f"`{', '.join(cat_cols[:3])}`" if cat_cols else "categorical variables"
+            num_sample = f"`{', '.join(num_cols[:3])}`" if num_cols else "numeric values"
+            col_context = (
+                f"\n\n#### 📌 Tailored Recommendation for Your Dataset:\n"
+                f"- **For Categorical Columns ({cat_sample})**: Use a **Horizontal Bar Chart** with sorted frequencies.\n"
+                f"- **For Continuous Metrics ({num_sample})**: Use a **Histogram** or **Box Plot** to analyze distribution, central tendency, and outliers.\n"
+                f"- **For Relationships**: Use a **Scatter Plot** to explore correlations between numerical pairs."
+            )
+
+        return (
+            "### 🥧 Verdict: Are Pie Charts a Good Choice?\n\n"
+            "In most modern data analysis and business intelligence workflows, **pie charts are generally not recommended**.\n\n"
+            "Data visualization experts (such as Edward Tufte and Stephen Few) widely advise against them due to core human cognitive and perceptual limitations:\n\n"
+            "| Dimension | 🥧 Pie Chart | 📊 Recommended Alternative |\n"
+            "| :--- | :--- | :--- |\n"
+            "| **Human Perception** | Relies on judging angles and circular areas (notoriously inaccurate) | Relies on linear length along a shared axis (highly accurate & fast) |\n"
+            "| **Category Capacity** | Breaks down with > 3–4 categories (slices become tiny and unreadable) | **Bar Chart** effortlessly handles 10–50+ categories with clear sorting |\n"
+            "| **Subtle Differences** | Hard to distinguish close percentages (e.g., 22% vs 25% looks identical) | Minute differences are instantly visible on a linear scale |\n"
+            "| **Continuous Data** | Cannot depict numeric ranges, variance, or distributions | **Histogram / Box Plot** displays distribution, skew, and spread |\n"
+            "| **Negative / Zero Values** | Impossible to plot negative numbers or zeros | **Bar Chart** cleanly plots below the 0-baseline |\n\n"
+            "#### ⚠️ The Rare Exceptions (When a Pie or Donut Chart Works):\n"
+            "A pie chart or donut chart is acceptable **only** when:\n"
+            "1. You have **strictly 2 to 3 categories** (e.g., *Yes / No*, *Paid / Free*).\n"
+            "2. The categories sum strictly to **100%** (a true part-to-whole relationship).\n"
+            "3. The differences between categories are obvious and prominent.\n\n"
+            "#### 🚀 What You Should Use Instead:\n"
+            "1. **Horizontal Bar Chart**: The undisputed standard for categorical comparisons, rankings, and long label names.\n"
+            "2. **Stacked 100% Bar Chart**: Superior for showing part-to-whole proportions across multiple subgroups.\n"
+            "3. **Donut Chart**: A cleaner modern visual when you must show 2–3 proportions, allowing a central KPI metric.\n"
+            "4. **Treemap**: Ideal for multi-level or hierarchical category breakdowns where space is constrained."
+            f"{col_context}\n\n"
+            "💡 *Tip: If you'd like to generate any of these charts, simply ask: `\"Plot a horizontal bar chart of [column]\"`!*"
+        )
+
     if any(k in q_lower for k in ["churn", "customer churn"]):
         return (
             "### 🔄 Understanding Customer Churn\n\n"

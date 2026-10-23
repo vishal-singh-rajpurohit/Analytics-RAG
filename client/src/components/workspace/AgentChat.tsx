@@ -6,6 +6,7 @@ import { apiClient } from "@/lib/apiClient";
 import { AgentSteps, AgentStep } from "./AgentSteps";
 import { CodeViewer } from "./CodeViewer";
 import { ChartViewer } from "./ChartViewer";
+import { MarkdownRenderer } from "@/components/ui/MarkdownRenderer";
 
 interface Message {
   id: string;
@@ -156,8 +157,8 @@ export const AgentChat: React.FC<AgentChatProps> = ({ analysisId, datasetName })
               )}
 
               {/* Main message text */}
-              <div className="whitespace-pre-wrap leading-relaxed font-sans">
-                {msg.content}
+              <div className="leading-relaxed font-sans">
+                <MarkdownRenderer content={msg.content} />
               </div>
 
               {/* Code viewer accordion */}

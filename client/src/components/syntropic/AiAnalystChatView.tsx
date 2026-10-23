@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { AgentSteps, AgentStep } from "@/components/workspace/AgentSteps";
 import { CodeViewer } from "@/components/workspace/CodeViewer";
+import { MarkdownRenderer } from "@/components/ui/MarkdownRenderer";
 import { getChartUrl } from "@/lib/apiClient";
 
 interface QueryResult {
@@ -175,8 +176,8 @@ export const AiAnalystChatView: React.FC<AiAnalystChatViewProps> = ({
                   )}
 
                   {/* Written Analytical Summary */}
-                  <div className="text-xs sm:text-sm text-[#19213D] dark:text-slate-200 leading-relaxed font-sans whitespace-pre-wrap">
-                    {item.result.summary}
+                  <div className="pt-1">
+                    <MarkdownRenderer content={item.result.summary} />
                   </div>
 
                   {/* Generated Chart Attachments */}

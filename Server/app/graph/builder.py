@@ -64,6 +64,23 @@ def router_node(state: AnalysisState) -> AnalysisState:
 
     if not classified_intent:
         # Rule 2: Deterministic heuristics
+        # Advisory / recommendation indicators (questions inquiring if a chart or method is suitable)
+        advisory_indicators = [
+            "is pie chart", "is a pie chart", "is bar chart", "is a bar chart",
+            "is a good", "is it a good", "will be a good", "would be a good",
+            "is good", "good mode", "good way", "best way", "good choice", "good option",
+            "should i use", "can i use", "could i use", "which chart", "what chart",
+            "recommend a chart", "recommend chart", "suggest a chart",
+            "how should i visualize", "how to visualize", "when to use", "pros and cons",
+            "is it better to", "would it be better", "how to choose"
+        ]
+        is_advisory_request = any(ind in q_lower for ind in advisory_indicators)
+        if not is_advisory_request and (
+            any(q_lower.startswith(w) for w in ["is ", "are ", "should ", "would ", "can ", "could ", "why "])
+            and any(term in q_lower for term in ["good", "better", "best", "suit", "appropriate", "mode", "way", "choice", "recommend"])
+        ):
+            is_advisory_request = True
+
         # Calculation / analytical tool indicators
         calc_indicators = [
             "calculate", "compute", "sum of", "total", "average of", "mean of",
@@ -93,9 +110,11 @@ def router_node(state: AnalysisState) -> AnalysisState:
         # Check if columns are explicitly mentioned
         mentioned_cols = [c for c in cols if len(c) > 1 and c in q_lower]
 
-        if is_clean_request:
+        if is_advisory_request:
+            classified_intent = "direct"
+        elif is_clean_request and not is_direct_question:
             classified_intent = "clean"
-        elif is_viz_request:
+        elif is_viz_request and not is_direct_question:
             classified_intent = "visualize"
         elif is_direct_question:
             if mentioned_cols and is_calc_request:
@@ -254,7 +273,7 @@ def route_sandbox(state: AnalysisState) -> Literal["visualizer", "fixer", "synth
         return "synthesizer"
 
     # If code succeeded, check if visualization is needed
-    if intent == "visualize" or any(k in query for k in ["chart", "plot", "trend", "graph", "histogram", "scatter"]):
+    if intent == "visualize" or any(k in query for k in ["plot", "draw", "visualize", "render chart", "generate chart", "create chart"]):
         return "visualizer"
 
     return "synthesizer"
