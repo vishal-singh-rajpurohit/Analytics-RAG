@@ -182,6 +182,13 @@ services:
       tg.test_full_langgraph_pipeline_execution();
       print('PASS: Full LangGraph Pipeline Tests');
 
+      import tests.test_direct_llm_query as tdlq;
+      tdlq.test_router_direct_intent_for_conceptual_queries();
+      tdlq.test_router_tool_intent_for_analysis_queries();
+      tdlq.test_full_pipeline_direct_query_execution();
+      tdlq.test_full_pipeline_query_without_dataset();
+      print('PASS: Direct LLM & Tool Routing Tests');
+
       import tests.test_single_csv_constraint as tsc;
       tsc.test_single_csv_per_analysis_chat();
       print('PASS: Single CSV Constraint Tests');

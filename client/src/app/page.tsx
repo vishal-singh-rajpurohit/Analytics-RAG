@@ -91,9 +91,12 @@ export default function SyntropicAnalyticsPage() {
     const loadDatasetData = async () => {
       try {
         const authConfig = { headers: { Authorization: `Bearer ${token}` } };
+        const isGeneralChat = analysisId === "general" || analysisId.startsWith("general");
         const [metaResult, previewResult] = await Promise.allSettled([
           apiClient.get(`/analysis/${analysisId}`, authConfig),
-          apiClient.get(`/analysis/${analysisId}/preview?limit=50`, authConfig)
+          !isGeneralChat 
+            ? apiClient.get(`/analysis/${analysisId}/preview?limit=50`, authConfig) 
+            : Promise.resolve({ data: { columns: [], rows: [] } })
         ]);
 
         if (metaResult.status === "fulfilled" && metaResult.value.data) {
@@ -118,7 +121,10 @@ export default function SyntropicAnalyticsPage() {
                     code: nextItem.code,
                     chart_urls: nextItem.chart_urls || [],
                     agent_steps: nextItem.agent_steps || [],
-                    result_text: nextItem.result_text
+                    result_text: nextItem.result_text,
+                    tool_required: nextItem.tool_required,
+                    tool_used: nextItem.tool_used,
+                    is_direct_answer: nextItem.is_direct_answer
                   } : null
                 });
                 if (nextItem) i++;
@@ -148,7 +154,15 @@ export default function SyntropicAnalyticsPage() {
   const handleSelectDataset = (dataset: DatasetItem) => {
     setActiveDataset(dataset.filename);
     setAnalysisId(dataset.analysis_id);
-    setActiveTab("overview");
+    if (dataset.analysis_id === "general" || dataset.analysis_id.startsWith("general")) {
+      setActiveTab("chat");
+      setCleaningReport(null);
+      setColumns([]);
+      setSampleRows([]);
+      setTotalRows(0);
+    } else {
+      setActiveTab("overview");
+    }
   };
 
   const handleNewChat = () => {
@@ -201,7 +215,13 @@ export default function SyntropicAnalyticsPage() {
   };
 
   const handleSendQuery = async (queryText: string) => {
-    if (!queryText.trim() || isLoading || !analysisId) return;
+    if (!queryText.trim() || isLoading) return;
+
+    const targetSessionId = analysisId || "general";
+    if (!analysisId) {
+      setAnalysisId(targetSessionId);
+      setActiveDataset("Direct LLM Assistant");
+    }
 
     // Switch to chat view when a query is submitted
     setActiveTab("chat");
@@ -218,7 +238,7 @@ export default function SyntropicAnalyticsPage() {
 
     try {
       const response = await apiClient.post("/analysis/query", {
-        analysis_id: analysisId,
+        analysis_id: targetSessionId,
         query: queryText,
       });
 
@@ -242,6 +262,7 @@ export default function SyntropicAnalyticsPage() {
               ...item,
               result: {
                 summary: `### ⚠️ Agent Execution Notice\n${errDetail || "Could not complete query through agent pipeline."}`,
+                is_direct_answer: true,
               },
             }
             : item

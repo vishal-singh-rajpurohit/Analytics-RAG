@@ -28,10 +28,10 @@ export const FloatingInput: React.FC<FloatingInputProps> = ({
   const [query, setQuery] = useState("");
 
   const suggestedPrompts = [
+    { label: "💬 What is Churn?", query: "What is customer churn and what are standard industry strategies to reduce it?" },
     { label: "📊 Outlier Distribution", query: "Plot the outlier distribution for numeric features" },
     { label: "📈 Category Summary", query: "Break down the records and averages by category" },
     { label: "🔍 Correlation Matrix", query: "Calculate correlations between continuous variables and plot a heatmap" },
-    { label: "🧹 Quality Audit", query: "Summarize data anomalies, missing rates, and suggest cleaning steps" },
   ];
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -81,7 +81,11 @@ export const FloatingInput: React.FC<FloatingInputProps> = ({
           type="text"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder={`Ask anything about ${targetFileName} (e.g., "Compare mean revenue by tier and plot chart")...`}
+          placeholder={
+            targetFileName && targetFileName !== "Direct AI Assistant" && targetFileName !== "Direct LLM Assistant"
+              ? `Ask anything about ${targetFileName} (e.g., "What is churn?" or "Plot trend chart")...`
+              : "Ask the LLM any question (e.g., 'What is customer churn?')... Tools run if required."
+          }
           disabled={isLoading}
           className="flex-1 bg-transparent px-2 text-xs sm:text-sm text-[#19213D] dark:text-white placeholder-slate-400 focus:outline-none disabled:opacity-50"
         />

@@ -70,6 +70,7 @@ jobs:
 
       - name: Run Backend Pytest Suite
         env:
+          PYTHONPATH: Server
           DATABASE_URL: postgresql+asyncpg://admin:password@localhost:5432/customer_care_db
           REDIS_URL: redis://localhost:6379
           ENVIRONMENT: testing

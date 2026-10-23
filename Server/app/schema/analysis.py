@@ -20,7 +20,7 @@ class UploadResponse(BaseModel):
 
 
 class QueryRequest(BaseModel):
-    analysis_id: str
+    analysis_id: Optional[str] = "general"
     query: str
     dataset_id: Optional[str] = None
 
@@ -30,6 +30,9 @@ class QueryResponse(BaseModel):
     user_query: str
     intent: str
     summary: str
+    tool_required: bool = False
+    tool_used: List[str] = Field(default_factory=list)
+    is_direct_answer: bool = False
     code: Optional[str] = None
     result_text: Optional[str] = None
     chart_urls: List[str] = Field(default_factory=list)

@@ -2,7 +2,7 @@ from typing import TypedDict, List, Dict, Any, Optional
 
 class AnalysisState(TypedDict):
     analysis_id: str
-    dataset_path: str
+    dataset_path: Optional[str]
     cleaned_file_path: Optional[str]
     dataset_schema: Dict[str, Any]
     user_query: str
@@ -12,7 +12,12 @@ class AnalysisState(TypedDict):
     cleaning_report: Dict[str, Any]
     
     # Intent / Router
-    intent: str  # "clean" | "analyze" | "visualize" | "general"
+    intent: str  # "clean" | "analyze" | "visualize" | "direct" | "general"
+    tool_required: bool
+    tool_used: List[str]
+    
+    # Direct LLM response (when no tools required)
+    direct_response: Optional[str]
     
     # Analyst Agent outputs
     analysis_code: Optional[str]

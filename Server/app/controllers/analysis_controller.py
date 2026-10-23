@@ -253,34 +253,57 @@ async def handle_query(
 ) -> QueryResponse:
     """
     Executes LangGraph multi-agent workflow for a natural language user query.
+    Supports both Direct LLM answers (no tool needed) and On-Demand Tool Execution (Pandas/Matplotlib/Cleaner).
+    Can be run with an active dataset analysis session, or directly in general chat mode.
     """
-    meta = _load_session_meta(payload.analysis_id)
-    if not meta:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Analysis session '{payload.analysis_id}' not found. Please upload a dataset first."
-        )
+    session_id = payload.analysis_id or "general"
 
-    if current_user and meta.get("user_id") and meta.get("user_id") != str(current_user.id):
+    # Scope general sessions per user
+    if session_id in ["general", "default", "chat"]:
+        user_key = str(current_user.id) if current_user else "guest"
+        session_id = f"general_{user_key}"
+
+    meta = _load_session_meta(session_id)
+    if not meta:
+        if session_id.startswith("general"):
+            meta = {
+                "analysis_id": session_id,
+                "dataset_path": None,
+                "original_filename": "Direct LLM Assistant",
+                "total_rows": 0,
+                "total_columns": 0,
+                "health_score": 100,
+                "cleaning_report": {},
+                "sample_preview": [],
+                "columns": [],
+                "chat_history": [],
+                "created_at": datetime.utcnow().isoformat(),
+                "user_id": str(current_user.id) if current_user else "anonymous"
+            }
+            _save_session_meta(session_id, meta)
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Analysis session '{payload.analysis_id}' not found. Please upload a dataset first or use general chat."
+            )
+
+    if current_user and meta.get("user_id") and meta.get("user_id") not in [str(current_user.id), "anonymous"]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You do not have permission to access this analysis session."
         )
 
-    dataset_path = meta.get("dataset_path", "")
-    if not os.path.exists(dataset_path):
+    dataset_path = meta.get("dataset_path")
+    if dataset_path and not os.path.exists(dataset_path):
         fallback_path = os.path.join(UPLOAD_RAW_DIR, os.path.basename(dataset_path))
         if os.path.exists(fallback_path):
             dataset_path = fallback_path
         else:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Dataset file missing on disk for analysis '{payload.analysis_id}'."
-            )
+            dataset_path = None
 
     # Initialize LangGraph state
     initial_state = {
-        "analysis_id": payload.analysis_id,
+        "analysis_id": session_id,
         "dataset_path": dataset_path,
         "cleaned_file_path": None,
         "dataset_schema": {
@@ -292,7 +315,10 @@ async def handle_query(
         "user_query": payload.query,
         "chat_history": meta.get("chat_history", []),
         "cleaning_report": meta.get("cleaning_report", {}),
-        "intent": "analyze",
+        "intent": "direct",
+        "tool_required": False,
+        "tool_used": [],
+        "direct_response": None,
         "analysis_code": None,
         "code_execution_result": None,
         "analysis_summary": None,
@@ -331,16 +357,22 @@ async def handle_query(
         "chart_urls": resp_data.get("chart_urls", []),
         "agent_steps": resp_data.get("agent_steps", []),
         "result_text": resp_data.get("result_text"),
+        "tool_required": resp_data.get("tool_required", False),
+        "tool_used": resp_data.get("tool_used", []),
+        "is_direct_answer": resp_data.get("is_direct_answer", False),
         "timestamp": now_iso
     })
     meta["chat_history"] = history
-    _save_session_meta(payload.analysis_id, meta)
+    _save_session_meta(session_id, meta)
 
     return QueryResponse(
-        analysis_id=payload.analysis_id,
+        analysis_id=session_id,
         user_query=payload.query,
-        intent=resp_data.get("intent", "analyze"),
+        intent=resp_data.get("intent", "direct"),
         summary=resp_data.get("summary", ""),
+        tool_required=resp_data.get("tool_required", False),
+        tool_used=resp_data.get("tool_used", []),
+        is_direct_answer=resp_data.get("is_direct_answer", False),
         code=resp_data.get("code"),
         result_text=resp_data.get("result_text"),
         chart_urls=resp_data.get("chart_urls", []),
@@ -404,6 +436,7 @@ async def handle_preview(
 async def handle_list_datasets(current_user: Optional[User] = None) -> List[Dict[str, Any]]:
     """
     Lists all uploaded datasets found in the system for the given user.
+    Excludes standalone general direct LLM chat sessions.
     """
     datasets = []
     if os.path.exists(UPLOAD_RAW_DIR):
@@ -413,8 +446,13 @@ async def handle_list_datasets(current_user: Optional[User] = None) -> List[Dict
                 try:
                     with open(fpath, "r", encoding="utf-8") as f:
                         meta = json.load(f)
+                        a_id = str(meta.get("analysis_id") or "")
+                        # Filter out general chat sessions
+                        if a_id.startswith("general") or not meta.get("dataset_path"):
+                            continue
+
                         datasets.append({
-                            "analysis_id": meta.get("analysis_id"),
+                            "analysis_id": a_id,
                             "filename": meta.get("original_filename", fname.replace("_meta.json", "")),
                             "total_rows": meta.get("total_rows", 0),
                             "total_columns": meta.get("total_columns", 0),
@@ -435,15 +473,38 @@ async def handle_get_analysis(
 ) -> Dict[str, Any]:
     """
     Retrieves full analysis metadata, schema, and cleaning report.
+    Auto-initializes if requested for a general direct LLM chat session.
     """
-    meta = _load_session_meta(analysis_id)
-    if not meta:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Analysis session '{analysis_id}' not found."
-        )
+    session_id = analysis_id
+    if session_id in ["general", "default", "chat"]:
+        user_key = str(current_user.id) if current_user else "guest"
+        session_id = f"general_{user_key}"
 
-    if current_user and meta.get("user_id") and meta.get("user_id") != str(current_user.id):
+    meta = _load_session_meta(session_id)
+    if not meta:
+        if session_id.startswith("general"):
+            meta = {
+                "analysis_id": session_id,
+                "dataset_path": None,
+                "original_filename": "Direct LLM Assistant",
+                "total_rows": 0,
+                "total_columns": 0,
+                "health_score": 100,
+                "cleaning_report": {},
+                "sample_preview": [],
+                "columns": [],
+                "chat_history": [],
+                "created_at": datetime.utcnow().isoformat(),
+                "user_id": str(current_user.id) if current_user else "anonymous"
+            }
+            _save_session_meta(session_id, meta)
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Analysis session '{analysis_id}' not found."
+            )
+
+    if current_user and meta.get("user_id") and meta.get("user_id") not in [str(current_user.id), "anonymous"]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You do not have permission to view this analysis session."

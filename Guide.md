@@ -42,7 +42,7 @@ The Syntropic Analytics Platform consists of five core tiers:
 ```
 
 - **Frontend (`client/`)**: Next.js 16 (App Router), Tailwind CSS v4, Lucide icons, NextAuth.js authentication.
-- **Backend (`Server/`)**: FastAPI, LangGraph multi-agent execution pipeline (Cleaner, Analyst, Visualizer, Sandbox), Taskiq.
+- **Backend (`Server/`)**: FastAPI, LangGraph multi-agent execution pipeline (Direct LLM Responder, Cleaner, Analyst, Visualizer, Sandbox), Taskiq.
 - **Vector Database (`db`)**: PostgreSQL 17 with `pgvector` extension for embeddings and metadata storage.
 - **Cache & Message Broker (`redis`)**: Redis Alpine with append-only persistence.
 - **Reverse Proxy & SSL (`nginx` + `certbot`)**: High-performance HTTP/2 reverse proxy, Gzip compression, WebSockets support, Let's Encrypt SSL termination, and automated renewal.

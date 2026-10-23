@@ -160,6 +160,40 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </div>
 
           <div className="space-y-1.5 mt-1">
+            {/* Direct LLM Chat Mode */}
+            <div
+              onClick={() => onSelectDataset({
+                analysis_id: "general",
+                filename: "Direct LLM Assistant",
+                total_rows: 0,
+                total_columns: 0,
+                health_score: 100
+              })}
+              className={`p-2.5 rounded-xl border transition-all cursor-pointer flex items-center justify-between ${
+                activeDatasetId === "general" || activeDatasetId.startsWith("general_")
+                  ? "bg-emerald-50 dark:bg-emerald-950/40 border-emerald-300 dark:border-emerald-800/80 shadow-2xs"
+                  : "bg-white dark:bg-zinc-900 border-[#E5EBF2] dark:border-zinc-800 hover:border-emerald-300 dark:hover:border-emerald-700/50"
+              }`}
+            >
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
+                  activeDatasetId === "general" || activeDatasetId.startsWith("general_")
+                    ? "bg-emerald-600 text-white"
+                    : "bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-slate-300"
+                }`}>
+                  <Sparkles className="w-4 h-4" />
+                </div>
+                <div className="min-w-0">
+                  <p className="font-bold text-xs truncate text-[#19213D] dark:text-white">
+                    Direct LLM Chat
+                  </p>
+                  <p className="text-[10px] text-slate-400">
+                    Direct answers &amp; on-demand tools
+                  </p>
+                </div>
+              </div>
+            </div>
+
             {datasets.length === 0 ? (
               <div className="p-6 text-center text-slate-400 text-xs border border-dashed border-[#E5EBF2] dark:border-zinc-800 rounded-2xl space-y-2">
                 <Database className="w-6 h-6 mx-auto text-slate-300 dark:text-zinc-700" />

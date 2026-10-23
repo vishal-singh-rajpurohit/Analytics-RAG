@@ -33,13 +33,14 @@
 
 ## 📌 Executive Summary (For Recruiters & Engineering Leaders)
 
-The **Autonomous Multi-Agent Data Analytics Platform** is a fullstack, production-grade AI system engineered to solve the bottleneck of manual data analysis. Rather than acting as a superficial wrapper around an LLM chat prompt, the platform implements a **compiled cyclic state machine (LangGraph)** that coordinates a specialized swarm of autonomous agents:
+The **Autonomous Multi-Agent Data Analytics Platform** is a fullstack, production-grade AI system engineered to solve the bottleneck of manual data analysis. Rather than acting as a superficial wrapper around an LLM chat prompt, the platform implements a **compiled cyclic state machine (LangGraph)** that coordinates a specialized swarm of autonomous agents with **On-Demand Specialist Tool Invocation**:
 
-1. **The Statistical Auditor & Cleaner**: Ingests arbitrary tabular CSV datasets, computes null distributions, evaluates IQR anomaly fences ($Q_1 - 1.5\text{IQR}$, $Q_3 + 1.5\text{IQR}$), and scores dataset health from $0$ to $100\%$.
-2. **The Analyst (Code Synthesizer)**: Translates natural language business questions into deterministic, vectorized Python (`pandas` / `numpy`) analysis code, enforcing a *Code-as-Truth* paradigm that eliminates mathematical hallucinations.
-3. **The AST-Hardened Execution Sandbox**: Validates and runs untrusted, model-generated Python code inside an isolated runtime fortified by an Abstract Syntax Tree (AST) security firewall, blocking OS command execution, network sockets, file system access, and malicious built-ins.
-4. **The Self-Healing Fixer**: An autonomous reflection loop that catches runtime exceptions, feeds tracebacks back to the LLM, and refactors failing code in real time (up to 3 retries).
-5. **The Visualizer**: Automatically synthesizes publication-quality Matplotlib/Seaborn visualizations exported as high-DPI charts with zero memory leaks via headless `Agg` backend orchestration.
+1. **The Direct LLM Responder**: Answers conceptual questions (e.g. churn definitions, business metrics, machine learning principles, industry recommendations) and general queries directly with rich Markdown and KaTeX math without unnecessary tool execution.
+2. **The Statistical Auditor & Cleaner (Tool)**: Ingests arbitrary tabular CSV datasets, computes null distributions, evaluates IQR anomaly fences ($Q_1 - 1.5\text{IQR}$, $Q_3 + 1.5\text{IQR}$), and scores dataset health from $0$ to $100\%$.
+3. **The Analyst (Code Synthesizer Tool)**: Translates natural language business questions into deterministic, vectorized Python (`pandas` / `numpy`) analysis code, enforcing a *Code-as-Truth* paradigm that eliminates mathematical hallucinations.
+4. **The AST-Hardened Execution Sandbox (Tool)**: Validates and runs untrusted, model-generated Python code inside an isolated runtime fortified by an Abstract Syntax Tree (AST) security firewall, blocking OS command execution, network sockets, file system access, and malicious built-ins.
+5. **The Self-Healing Fixer**: An autonomous reflection loop that catches runtime exceptions, feeds tracebacks back to the LLM, and refactors failing code in real time (up to 3 retries).
+6. **The Visualizer (Tool)**: Automatically synthesizes publication-quality Matplotlib/Seaborn visualizations exported as high-DPI charts with zero memory leaks via headless `Agg` backend orchestration.
 
 ### 🎯 Key Performance & Reliability Metrics
 * **Sub-2s Query-to-Chart Latency**: In-memory AST sandboxing executes verified Python code with sub-millisecond overhead compared to slow container-per-run virtualization.
@@ -104,21 +105,23 @@ The platform's analytical brain is built on a compiled `StateGraph` executing ov
 
 ```mermaid
 stateDiagram-v2
-    [*] --> Router : User Prompt + CSV Dataset Schema
+    [*] --> Router : User Prompt + Dataset Context
 
     state Router {
         [*] --> ClassifyIntent
-        ClassifyIntent --> CleanIntent : Audit / Missing / Outliers
-        ClassifyIntent --> AnalyzeIntent : Math / Aggregation / Filter
-        ClassifyIntent --> VisualizeIntent : Plot / Chart / Graph
-        ClassifyIntent --> GeneralIntent : Greeting / Help / Explanation
+        ClassifyIntent --> DirectIntent : Direct Answer (No Tool Needed)
+        ClassifyIntent --> CleanIntent : Data Audit / Cleaning Tool
+        ClassifyIntent --> AnalyzeIntent : Math / Vectorized Code Tool
+        ClassifyIntent --> VisualizeIntent : Visual Matplotlib Chart Tool
     }
 
+    Router --> DirectLLM : Intent in ["direct", "general"]
     Router --> Cleaner : Intent = "clean"
     Router --> Analyst : Intent in ["analyze", "visualize"]
-    Router --> Synthesizer : Intent = "general"
 
-    state Cleaner {
+    DirectLLM --> Synthesizer : Direct Answer without Tool Invocation
+    Cleaner --> Synthesizer : Return Quality Matrix
+    Analyst --> Sandbox : Generated Code Block
         [*] --> ProfileMissing
         ProfileMissing --> DetectIQRAnomalies
         DetectIQRAnomalies --> ComputeHealthScore

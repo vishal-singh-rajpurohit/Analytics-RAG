@@ -23,6 +23,9 @@ interface QueryResult {
   chart_urls?: string[];
   agent_steps?: AgentStep[];
   result_text?: string | null;
+  tool_required?: boolean;
+  tool_used?: string[];
+  is_direct_answer?: boolean;
 }
 
 export interface DynamicResponseItem {
@@ -59,24 +62,24 @@ export const AiAnalystChatView: React.FC<AiAnalystChatViewProps> = ({
 
   const defaultPrompts = [
     {
-      title: "Outlier Analysis",
+      title: "💬 Understanding Churn",
+      desc: "Direct explanation of churn metrics and retention drivers",
+      query: "What is customer churn and what are standard industry strategies to mitigate it?"
+    },
+    {
+      title: "📊 Outlier Analysis",
       desc: "Detect distribution anomalies using IQR bounds",
       query: "Analyze statistical outliers across all continuous columns and explain extreme values"
     },
     {
-      title: "Category Breakdown",
-      desc: "Group records and calculate averages",
+      title: "📈 Category Breakdown",
+      desc: "Group records and calculate averages via tools",
       query: "Group dataset by categorical features, compute mean values, and summarize trends"
     },
     {
-      title: "Correlation Heatmap",
-      desc: "Plot relationships between continuous columns",
+      title: "📉 Correlation Heatmap",
+      desc: "Generate Matplotlib visual chart via Visualizer tool",
       query: "Compute the correlation matrix for all continuous variables and generate a heatmap chart"
-    },
-    {
-      title: "Executive Summary",
-      desc: "Synthesize key business takeaways",
-      query: "Generate an executive summary of this dataset highlighting key patterns and recommendations"
     }
   ];
 
@@ -151,6 +154,21 @@ export const AiAnalystChatView: React.FC<AiAnalystChatViewProps> = ({
             <div className="flex-1 max-w-3xl space-y-3">
               {item.result ? (
                 <div className="bg-white dark:bg-zinc-900 border border-[#E5EBF2] dark:border-zinc-800 rounded-2xl p-5 shadow-sm space-y-4">
+                  {/* Response Type Pill */}
+                  <div className="flex items-center justify-between pb-1">
+                    {item.result.is_direct_answer ? (
+                      <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/40">
+                        <MessageSquare className="w-3 h-3 text-emerald-500" />
+                        <span>Direct Answer from LLM</span>
+                      </div>
+                    ) : (
+                      <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800/40">
+                        <Sparkles className="w-3 h-3 text-blue-500" />
+                        <span>Tools Executed: {item.result.tool_used?.length ? item.result.tool_used.join(" + ") : "Specialist Tools"}</span>
+                      </div>
+                    )}
+                  </div>
+
                   {/* Multi-Agent Steps Timeline */}
                   {item.result.agent_steps && item.result.agent_steps.length > 0 && (
                     <AgentSteps steps={item.result.agent_steps} />

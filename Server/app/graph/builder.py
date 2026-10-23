@@ -1,4 +1,5 @@
 import os
+import re
 import pandas as pd
 from typing import Dict, Any, Literal
 from datetime import datetime
@@ -11,25 +12,114 @@ from app.agents.analyst.analysis import analyst_agent
 from app.agents.executor.sandbox import execute_sandboxed_code
 from app.agents.fixer.fixer import fixer_agent
 from app.agents.visualizer.visualizer import visualizer_agent
+from app.agents.direct_responder import direct_responder_agent
+from app.agents.prompts.agent_prompts import ROUTER_SYSTEM_PROMPT
+from app.agents.llm_factory import get_chat_model
 from app.utils.csv_loader import read_csv_robust
+from langchain_core.messages import SystemMessage, HumanMessage
 
 
 def router_node(state: AnalysisState) -> AnalysisState:
     """
-    Router Node: Classifies user query intent.
+    Router Node: Intelligently classifies user query intent.
+    Decides whether the query can be answered DIRECTLY by the LLM (no tool required),
+    or if it requires specialist tools: 'clean', 'visualize', or 'analyze'.
     """
-    query = (state.get("user_query") or "").lower()
+    query = (state.get("user_query") or "").strip()
+    q_lower = query.lower()
+    dataset_path = state.get("dataset_path")
+    schema = state.get("dataset_schema", {})
+    cols = [c.get("name", "").lower() for c in schema.get("columns", []) if isinstance(c, dict)]
 
-    if any(k in query for k in ["clean", "null", "missing", "duplicate", "anomaly", "health", "audit"]):
-        intent = "clean"
-    elif any(k in query for k in ["chart", "plot", "graph", "visualize", "trend", "histogram", "scatter", "distribution"]):
-        intent = "visualize"
-    elif any(k in query for k in ["hi", "hello", "who are you", "help"]):
-        intent = "general"
+    # Rule 0: If no dataset or schema is present, route directly to LLM
+    if not dataset_path and not cols:
+        state["intent"] = "direct"
+        state["tool_required"] = False
+        state["tool_used"] = []
+        return state
+
+    # Rule 1: Check if LLM is available to make intelligent classification
+    llm = get_chat_model()
+    classified_intent = None
+
+    if llm and len(query.split()) > 2:
+        try:
+            messages = [
+                SystemMessage(content=ROUTER_SYSTEM_PROMPT),
+                HumanMessage(
+                    content=(
+                        f"Dataset columns: {cols[:10]}\n"
+                        f"User Query: \"{query}\"\n"
+                        "Decide: direct, clean, visualize, or analyze."
+                    )
+                )
+            ]
+            resp = llm.invoke(messages)
+            text_resp = (resp.content if hasattr(resp, "content") else str(resp)).strip().lower()
+            match = re.search(r"\b(direct|clean|visualize|analyze)\b", text_resp)
+            if match:
+                classified_intent = match.group(1)
+        except Exception as e:
+            print(f"[ROUTER] LLM intent classification notice: {e}. Using deterministic heuristics.")
+
+    if not classified_intent:
+        # Rule 2: Deterministic heuristics
+        # Calculation / analytical tool indicators
+        calc_indicators = [
+            "calculate", "compute", "sum of", "total", "average of", "mean of",
+            "count of", "how many", "filter", "group by", "grouped by", " by ",
+            "top ", "bottom ", "highest", "lowest", "max", "min", "aggregate",
+            "std dev", "standard deviation", "variance", "quantile", "percentile"
+        ]
+        is_calc_request = any(ind in q_lower for ind in calc_indicators)
+
+        # Cleaning tool indicators
+        clean_indicators = ["clean", "null", "missing", "duplicate", "anomaly", "health", "audit", "deduplicate"]
+        is_clean_request = any(ind in q_lower for ind in clean_indicators)
+
+        # Visualization tool indicators
+        viz_indicators = ["chart", "plot", "graph", "visualize", "histogram", "scatter", "distribution", "trend", "heatmap", "bar chart", "pie chart"]
+        is_viz_request = any(ind in q_lower for ind in viz_indicators)
+
+        # Direct questions: definitions, concepts, greetings, advice, explanations
+        direct_indicators = [
+            "what is", "what are", "why is", "why are", "how does", "how do i",
+            "explain", "definition", "define", "tell me about", "difference between",
+            "meaning of", "what does", "hi", "hello", "hey", "who are you", "help",
+            "what can you do", "advice", "best practices", "how to improve", "recommendations"
+        ]
+        is_direct_question = any(ind in q_lower for ind in direct_indicators)
+
+        # Check if columns are explicitly mentioned
+        mentioned_cols = [c for c in cols if len(c) > 1 and c in q_lower]
+
+        if is_clean_request:
+            classified_intent = "clean"
+        elif is_viz_request:
+            classified_intent = "visualize"
+        elif is_direct_question:
+            if mentioned_cols and is_calc_request:
+                classified_intent = "analyze"
+            else:
+                classified_intent = "direct"
+        elif is_calc_request or (mentioned_cols and any(k in q_lower for k in ["show", "list", "get", "find", "compare"])):
+            classified_intent = "analyze"
+        elif mentioned_cols:
+            classified_intent = "analyze"
+        else:
+            classified_intent = "direct"
+
+    state["intent"] = classified_intent
+    state["tool_required"] = (classified_intent != "direct")
+    if classified_intent == "direct":
+        state["tool_used"] = []
+    elif classified_intent == "clean":
+        state["tool_used"] = ["Cleaner"]
+    elif classified_intent == "visualize":
+        state["tool_used"] = ["Analyst", "Sandbox", "Visualizer"]
     else:
-        intent = "analyze"
+        state["tool_used"] = ["Analyst", "Sandbox"]
 
-    state["intent"] = intent
     return state
 
 
@@ -41,8 +131,8 @@ def sandbox_node(state: AnalysisState) -> AnalysisState:
     dataset_path = state.get("dataset_path", "")
 
     try:
-        df = read_csv_robust(dataset_path) if os.path.exists(dataset_path) else pd.DataFrame()
-    except Exception as e:
+        df = read_csv_robust(dataset_path) if dataset_path and os.path.exists(dataset_path) else pd.DataFrame()
+    except Exception:
         df = pd.DataFrame()
 
     exec_result = execute_sandboxed_code(code=code, df=df)
@@ -75,17 +165,24 @@ def sandbox_node(state: AnalysisState) -> AnalysisState:
 
 def synthesizer_node(state: AnalysisState) -> AnalysisState:
     """
-    Synthesizer Node: Combines findings from Cleaner, Analyst, Sandbox, and Visualizer
-    into a structured final response.
+    Synthesizer Node: Combines findings from Direct LLM Responder, Cleaner, Analyst,
+    Sandbox, and Visualizer into a structured final response.
     """
-    intent = state.get("intent", "analyze")
+    intent = state.get("intent", "direct")
     query = state.get("user_query", "")
     analysis_res = state.get("code_execution_result", "")
     exec_err = state.get("execution_error", "")
     cleaning_rep = state.get("cleaning_report", {})
     chart_paths = state.get("chart_paths", [])
+    direct_res = state.get("direct_response", "")
 
-    if intent == "clean":
+    if intent in ["direct", "general"]:
+        summary = direct_res or "I am ready to help answer questions or analyze your dataset."
+        tool_used = []
+        tool_required = False
+    elif intent == "clean":
+        tool_used = ["Cleaner"]
+        tool_required = True
         summary = (
             f"### 🧹 Dataset Health & Cleaning Report\n\n"
             f"- **Health Score**: `{cleaning_rep.get('health_score', 0)}/100`\n"
@@ -96,16 +193,12 @@ def synthesizer_node(state: AnalysisState) -> AnalysisState:
             f"**Key Recommendations:**\n" +
             "\n".join([f"- {r}" for r in cleaning_rep.get("recommendations", [])[:4]])
         )
-    elif intent == "general":
-        summary = (
-            "Hello! I am your **Multi-Agent Data Analysis Workspace** assistant.\n\n"
-            "I can help you:\n"
-            "- 🧹 **Scan & Clean**: Audit nulls, duplicates, and statistical outliers.\n"
-            "- 🧠 **Analyze**: Ask questions in plain English, and I'll generate & execute Pandas code.\n"
-            "- 📊 **Visualize**: Request charts, trends, distributions, and comparisons via Matplotlib.\n\n"
-            "Try asking: *'Show me the sales trend'* or *'Audit missing values'*."
-        )
     else:
+        tool_used = ["Analyst", "Sandbox"]
+        if chart_paths:
+            tool_used.append("Visualizer")
+        tool_required = True
+
         if exec_err:
             summary = (
                 f"### Analysis Incomplete\n"
@@ -117,12 +210,15 @@ def synthesizer_node(state: AnalysisState) -> AnalysisState:
                 f"{analysis_res}\n\n"
             )
             if chart_paths:
-                summary += f"*\u2705 A visualization has been generated below based on your request.*"
+                summary += "*✅ A visualization has been generated below based on your request.*"
 
     state["final_response"] = {
         "analysis_id": state.get("analysis_id"),
         "user_query": query,
         "intent": intent,
+        "tool_required": tool_required,
+        "tool_used": tool_used,
+        "is_direct_answer": (intent in ["direct", "general"]),
         "summary": summary,
         "code": state.get("analysis_code"),
         "result_text": analysis_res,
@@ -134,15 +230,16 @@ def synthesizer_node(state: AnalysisState) -> AnalysisState:
 
     return state
 
+
 # Conditional Routing Functions
-def route_intent(state: AnalysisState) -> Literal["cleaner", "analyst", "synthesizer"]:
-    intent = state.get("intent", "analyze")
-    if intent == "clean":
+def route_intent(state: AnalysisState) -> Literal["direct_llm", "cleaner", "analyst"]:
+    intent = state.get("intent", "direct")
+    if intent in ["direct", "general"]:
+        return "direct_llm"
+    elif intent == "clean":
         return "cleaner"
-    elif intent in ["analyze", "visualize"]:
-        return "analyst"
     else:
-        return "synthesizer"
+        return "analyst"
 
 
 def route_sandbox(state: AnalysisState) -> Literal["visualizer", "fixer", "synthesizer"]:
@@ -166,11 +263,13 @@ def route_sandbox(state: AnalysisState) -> Literal["visualizer", "fixer", "synth
 def build_analysis_graph():
     """
     Constructs and compiles the multi-agent LangGraph workflow.
+    Supports both Direct LLM Answers and On-Demand Specialist Tool execution.
     """
     graph = StateGraph(AnalysisState)
 
     # Register nodes
     graph.add_node("router", router_node)
+    graph.add_node("direct_llm", direct_responder_agent)
     graph.add_node("cleaner", cleaner_agent)
     graph.add_node("analyst", analyst_agent)
     graph.add_node("sandbox", sandbox_node)
@@ -185,12 +284,13 @@ def build_analysis_graph():
         "router",
         route_intent,
         {
+            "direct_llm": "direct_llm",
             "cleaner": "cleaner",
             "analyst": "analyst",
-            "synthesizer": "synthesizer"
         }
     )
 
+    graph.add_edge("direct_llm", "synthesizer")
     graph.add_edge("cleaner", "synthesizer")
     graph.add_edge("analyst", "sandbox")
 
